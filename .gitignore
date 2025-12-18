@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Data files
+*.csv
+*.parquet
+data/
+
+# Secrets
+.env
+*.pem
+
+# OS
+.DS_Store
