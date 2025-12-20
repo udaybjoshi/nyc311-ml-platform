@@ -1,6 +1,6 @@
 # Project Scoping Document
 
-**NYC 311 Service Request Intelligence Platform**
+**Chicago 311 Service Request Intelligence Platform**
 
 *ML Portfolio Framework: Component 1 - Problem Framing & Metrics*
 
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This document defines the scope, success criteria, and constraints for the NYC 311 Service Request Intelligence Platform. The platform provides demand forecasting, anomaly detection, and lifecycle analytics for NYC's 311 non-emergency service system.
+This document defines the scope, success criteria, and constraints for the Chicago 311 Service Request Intelligence Platform. The platform provides demand forecasting, anomaly detection, and lifecycle analytics for Chicago's 311 non-emergency service system.
 
 **Key Differentiators:**
 - SCD Type 2 tracking for full request lifecycle history
@@ -21,7 +21,7 @@ This document defines the scope, success criteria, and constraints for the NYC 3
 
 ### Current State
 
-NYC 311 operations teams currently lack:
+Chicago 311 operations teams currently lack:
 1. **Visibility into demand spikes** until resources are already overwhelmed
 2. **Historical lifecycle tracking** - when status changes occur and how long requests stay in each state
 3. **Proactive resource allocation** based on predicted demand
@@ -108,13 +108,13 @@ Since we cannot directly measure business impact in a portfolio project:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     DATA INGESTION                              │
-│  NYC Open Data API → API Client → Databricks Volume             │
+│                     DATA INGESTION                               │
+│  Chicago Data Portal API → API Client → Databricks Volume             │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                  DATA QUALITY (Great Expectations)              │
+│                  DATA QUALITY (Great Expectations)               │
 │  Bronze Expectations → Silver Expectations → Gold Expectations  │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -126,13 +126,13 @@ Since we cannot directly measure business impact in a portfolio project:
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    ML PIPELINE (MLflow)                         │
+│                    ML PIPELINE (MLflow)                          │
 │  Feature Engineering → Prophet Training → Anomaly Detection     │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   SERVING & MONITORING                          │
+│                   SERVING & MONITORING                           │
 │  Streamlit Dashboard ← Batch Predictions ← Prediction Logging   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -183,7 +183,7 @@ Since we cannot directly measure business impact in a portfolio project:
 
 | Constraint | Details |
 |------------|---------|
-| Source | NYC Open Data Portal (public API) |
+| Source | Chicago Data Portal Portal (public API) |
 | Privacy | No PII - geographic data only |
 | History | 2+ years for seasonality modeling |
 | Volume | ~8,000-12,000 records/day |
@@ -193,7 +193,7 @@ Since we cannot directly measure business impact in a portfolio project:
 
 ## Scope
 
-### In Scope
+### In Scope ✅
 
 #### Phase 1: Data Platform (This Release)
 
@@ -217,7 +217,7 @@ Since we cannot directly measure business impact in a portfolio project:
 | Point-in-Time | Status on specific date | Historical reporting |
 | Resolution Velocity | Time from Open → Closed | SLA compliance |
 
-### Out of Scope
+### Out of Scope ❌
 
 | Item | Reason | Future Phase |
 |------|--------|--------------|
@@ -339,12 +339,22 @@ Since we cannot directly measure business impact in a portfolio project:
 - [x] Timeline realistic for portfolio project
 - [x] Definition of Done specified
 
+---
+
+## Document History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2024-01-15 | ML Team | Initial scoping |
+| 1.1 | 2024-01-20 | ML Team | Added Free Edition constraints |
+| 2.0 | 2024-12-18 | ML Team | Added SCD Type 2, Great Expectations, lifecycle analytics |
+| 2.1 | 2024-12-19 | ML Team | Updated timeline, technical approach, alternatives |
 
 ---
 
 ## References
 
-- [NYC Open Data - 311 Service Requests](https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9)
+- [Chicago Data Portal - 311 Service Requests](https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9)
 - [Databricks Free Edition](https://docs.databricks.com/en/getting-started/free-edition.html)
 - [Great Expectations Documentation](https://docs.greatexpectations.io/)
 - [Prophet Documentation](https://facebook.github.io/prophet/)

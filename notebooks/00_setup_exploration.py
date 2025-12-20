@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # NYC 311 Service Request Intelligence - Setup & Exploration
+# MAGIC # Chicago 311 Service Request Intelligence - Setup & Exploration
 # MAGIC 
 # MAGIC **Purpose**: Initial environment setup and exploratory data analysis to inform data quality rules and pipeline design.
 # MAGIC 
@@ -55,25 +55,25 @@ print(f"Setup complete. Timestamp: {datetime.now().isoformat()}")
 # MAGIC %md
 # MAGIC ## 2. Data Source Configuration
 # MAGIC 
-# MAGIC **NYC Open Data Portal - 311 Service Requests**
+# MAGIC **Chicago Data Portal - 311 Service Requests**
 # MAGIC 
 # MAGIC | Property | Value |
 # MAGIC |----------|-------|
-# MAGIC | API Endpoint | `https://data.cityofnewyork.us/resource/erm2-nwe9.json` |
-# MAGIC | Update Frequency | Daily (typically 24-48 hour lag) |
-# MAGIC | Historical Data | 2010 to present |
-# MAGIC | Annual Volume | ~3 million records/year |
+# MAGIC | API Endpoint | `https://data.cityofchicago.org/resource/v6vf-nfxy.json` |
+# MAGIC | Update Frequency | Daily |
+# MAGIC | Historical Data | 2018 to present |
+# MAGIC | Annual Volume | ~2 million records/year |
 # MAGIC | Rate Limit | 1,000 requests/hour (unauthenticated) |
 
 # COMMAND ----------
 
-# NYC Open Data API configuration
-API_BASE_URL = "https://data.cityofnewyork.us/resource/erm2-nwe9.json"
+# Chicago Data Portal API configuration
+API_BASE_URL = "https://data.cityofchicago.org/resource/v6vf-nfxy.json"
 APP_TOKEN = None  # Optional: Add Socrata app token for higher rate limits
 
 def fetch_data(limit: int = 10000, days_back: int = 90, order: str = "created_date DESC") -> pd.DataFrame:
     """
-    Fetch data from NYC 311 API for exploration.
+    Fetch data from Chicago 311 API for exploration.
     
     Args:
         limit: Maximum records to fetch
@@ -83,7 +83,7 @@ def fetch_data(limit: int = 10000, days_back: int = 90, order: str = "created_da
     Returns:
         DataFrame with raw API response
     """
-    start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+    start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%dT00:00:00')
     
     params = {
         "$limit": limit,
@@ -98,7 +98,15 @@ def fetch_data(limit: int = 10000, days_back: int = 90, order: str = "created_da
     response = requests.get(API_BASE_URL, params=params)
     response.raise_for_status()
     
-    df = pd.DataFrame(response.json())
+    data = response.json()
+    
+    if not data:
+        print("⚠️  API returned empty response. Trying without date filter...")
+        params_simple = {"$limit": limit, "$order": order}
+        response = requests.get(API_BASE_URL, params=params_simple)
+        data = response.json()
+    
+    df = pd.DataFrame(data)
     print(f"✓ Retrieved {len(df):,} records")
     return df
 
@@ -112,8 +120,11 @@ def fetch_data(limit: int = 10000, days_back: int = 90, order: str = "created_da
 # Fetch 90 days of data for comprehensive EDA
 raw_df = fetch_data(limit=100000, days_back=90)
 
-print(f"\nDataset shape: {raw_df.shape[0]:,} rows × {raw_df.shape[1]} columns")
-print(f"Date range: {raw_df['created_date'].min()} to {raw_df['created_date'].max()}")
+if raw_df.empty:
+    print("\n⚠️  No data retrieved. Check API connectivity.")
+else:
+    print(f"\nDataset shape: {raw_df.shape[0]:,} rows × {raw_df.shape[1]} columns")
+    print(f"Date range: {raw_df['created_date'].min()} to {raw_df['created_date'].max()}")
 
 # COMMAND ----------
 
@@ -155,14 +166,14 @@ display(schema_df)
 
 # COMMAND ----------
 
-# Define key fields by category
+# Define key fields by category - Chicago 311 schema
 KEY_FIELDS = {
-    "identifiers": ["unique_key"],
-    "timestamps": ["created_date", "closed_date", "resolution_action_updated_date", "due_date"],
+    "identifiers": ["sr_number"],
+    "timestamps": ["created_date", "closed_date", "last_modified_date"],
     "status": ["status"],
-    "classification": ["agency", "agency_name", "complaint_type", "descriptor"],
-    "location": ["borough", "incident_zip", "city", "latitude", "longitude", "location_type"],
-    "resolution": ["resolution_description"]
+    "classification": ["sr_type", "sr_short_code", "owner_department"],
+    "location": ["ward", "community_area", "street_address", "latitude", "longitude", "zip_code"],
+    "metadata": ["origin", "duplicate", "legacy_record"]
 }
 
 # Flatten and check availability
@@ -230,7 +241,7 @@ display(null_df)
 # COMMAND ----------
 
 # Analyze categorical fields
-categorical_fields = ["borough", "status", "agency", "location_type"]
+categorical_fields = ["status", "sr_type", "owner_department", "origin", "ward"]
 
 print("VALID VALUE SETS → Great Expectations 'value_set' parameter")
 print("=" * 60)
@@ -244,7 +255,7 @@ for field in categorical_fields:
         # Show top values with counts
         for val, count in value_counts.head(10).items():
             pct = count / len(raw_df) * 100
-            val_display = str(val)[:30] if val else "NULL"
+            val_display = str(val)[:40] if val else "NULL"
             print(f"  {val_display}: {count:,} ({pct:.1f}%)")
         
         if len(value_counts) > 10:
@@ -253,27 +264,26 @@ for field in categorical_fields:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### 5.3 Borough Values (Critical for Silver Layer)
+# MAGIC ### 5.3 Ward Values (Critical for Silver Layer)
 # MAGIC 
-# MAGIC Borough needs standardization in Silver layer. Document the raw values:
+# MAGIC Ward is the geographic dimension (equivalent to NYC borough):
 
 # COMMAND ----------
 
-# Borough analysis - need to understand variations for cleaning logic
-if 'borough' in raw_df.columns:
-    borough_values = raw_df['borough'].value_counts(dropna=False)
+# Ward analysis
+if 'ward' in raw_df.columns:
+    ward_values = raw_df['ward'].value_counts(dropna=False)
     
-    print("BOROUGH VALUES → Standardization rules for Silver layer")
+    print("WARD VALUES → Geographic dimension for aggregation")
     print("=" * 60)
-    print("\nRaw values found:")
-    for val, count in borough_values.items():
-        pct = count / len(raw_df) * 100
-        val_display = f"'{val}'" if val else "NULL"
-        print(f"  {val_display}: {count:,} ({pct:.1f}%)")
+    print(f"\nTotal unique wards: {raw_df['ward'].nunique()}")
+    print(f"Null rate: {raw_df['ward'].isna().mean():.1%}")
     
-    print("\nRecommended standardization:")
-    print("  BRONX, BROOKLYN, MANHATTAN, QUEENS, STATEN ISLAND → Keep as-is (uppercase)")
-    print("  Unspecified, null, empty → UNSPECIFIED")
+    print("\nTop 10 wards by volume:")
+    for val, count in ward_values.head(10).items():
+        pct = count / len(raw_df) * 100
+        val_display = f"Ward {val}" if val else "NULL"
+        print(f"  {val_display}: {count:,} ({pct:.1f}%)")
 
 # COMMAND ----------
 
@@ -284,7 +294,7 @@ if 'borough' in raw_df.columns:
 
 # COMMAND ----------
 
-# NYC bounding box analysis
+# Chicago bounding box analysis
 if 'latitude' in raw_df.columns and 'longitude' in raw_df.columns:
     # Convert to numeric
     raw_df['latitude'] = pd.to_numeric(raw_df['latitude'], errors='coerce')
@@ -305,49 +315,49 @@ if 'latitude' in raw_df.columns and 'longitude' in raw_df.columns:
     print(f"  Max: {coords['longitude'].max():.4f}")
     print(f"  Mean: {coords['longitude'].mean():.4f}")
     
-    # NYC bounding box
-    NYC_BOUNDS = {
-        "lat_min": 40.4,
-        "lat_max": 41.0,
-        "lon_min": -74.3,
-        "lon_max": -73.6
+    # Chicago bounding box
+    CHICAGO_BOUNDS = {
+        "lat_min": 41.6,
+        "lat_max": 42.1,
+        "lon_min": -87.95,
+        "lon_max": -87.5
     }
     
     in_bounds = (
-        (coords['latitude'].between(NYC_BOUNDS['lat_min'], NYC_BOUNDS['lat_max'])) &
-        (coords['longitude'].between(NYC_BOUNDS['lon_min'], NYC_BOUNDS['lon_max']))
+        (coords['latitude'].between(CHICAGO_BOUNDS['lat_min'], CHICAGO_BOUNDS['lat_max'])) &
+        (coords['longitude'].between(CHICAGO_BOUNDS['lon_min'], CHICAGO_BOUNDS['lon_max']))
     ).mean()
     
-    print(f"\nRecords within NYC bounds: {in_bounds:.1%}")
+    print(f"\nRecords within Chicago bounds: {in_bounds:.1%}")
     print(f"\nRecommended GE expectation:")
-    print(f"  latitude: between {NYC_BOUNDS['lat_min']} and {NYC_BOUNDS['lat_max']}, mostly=0.90")
-    print(f"  longitude: between {NYC_BOUNDS['lon_min']} and {NYC_BOUNDS['lon_max']}, mostly=0.90")
+    print(f"  latitude: between {CHICAGO_BOUNDS['lat_min']} and {CHICAGO_BOUNDS['lat_max']}, mostly=0.90")
+    print(f"  longitude: between {CHICAGO_BOUNDS['lon_min']} and {CHICAGO_BOUNDS['lon_max']}, mostly=0.90")
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### 5.5 Uniqueness Check
 # MAGIC 
-# MAGIC **Output**: Validates `expect_column_values_to_be_unique` for `unique_key`
+# MAGIC **Output**: Validates `expect_column_values_to_be_unique` for `sr_number`
 
 # COMMAND ----------
 
-# Check for duplicate unique_keys
-if 'unique_key' in raw_df.columns:
+# Check for duplicate sr_numbers
+if 'sr_number' in raw_df.columns:
     total = len(raw_df)
-    unique = raw_df['unique_key'].nunique()
+    unique = raw_df['sr_number'].nunique()
     duplicates = total - unique
     
-    print("UNIQUENESS CHECK → unique_key validation")
+    print("UNIQUENESS CHECK → sr_number validation")
     print("=" * 60)
     print(f"Total records: {total:,}")
-    print(f"Unique keys: {unique:,}")
+    print(f"Unique SR numbers: {unique:,}")
     print(f"Duplicates: {duplicates:,} ({duplicates/total*100:.2f}%)")
     
     if duplicates > 0:
         # Show duplicate examples
-        dup_keys = raw_df[raw_df['unique_key'].duplicated(keep=False)]['unique_key'].unique()[:5]
-        print(f"\nExample duplicate keys: {list(dup_keys)}")
+        dup_keys = raw_df[raw_df['sr_number'].duplicated(keep=False)]['sr_number'].unique()[:5]
+        print(f"\nExample duplicate SR numbers: {list(dup_keys)}")
         print("\n⚠️  Note: Duplicates in API response may indicate:")
         print("  1. Record updates (same key, different status) - Expected for SCD2")
         print("  2. API pagination issues - Need deduplication")
@@ -373,15 +383,15 @@ if 'status' in raw_df.columns:
         print(f"  {status}: {count:,} ({pct:.1f}%)")
     
     print("\nExpected status transitions:")
-    print("  Open → In Progress → Closed")
-    print("  Open → Assigned → Started → Closed")
-    print("  Open → Pending → Closed")
+    print("  Open → In Progress → Completed")
+    print("  Open → Cancelled")
+    print("  Open → Duplicate")
     
     print("\nSCD2 implications:")
     print("  - Each status change creates a new version")
     print("  - __START_AT = when record entered this status")
     print("  - __END_AT = when record left this status (null if current)")
-    print("  - Track using resolution_action_updated_date and closed_date")
+    print("  - Track using last_modified_date")
 
 # COMMAND ----------
 
@@ -393,7 +403,7 @@ if 'status' in raw_df.columns:
 # COMMAND ----------
 
 # Analyze timestamp fields that indicate changes
-timestamp_fields = ['created_date', 'closed_date', 'resolution_action_updated_date', 'due_date']
+timestamp_fields = ['created_date', 'closed_date', 'last_modified_date']
 
 print("TIMESTAMP FIELDS → SCD2 change detection")
 print("=" * 60)
@@ -415,7 +425,7 @@ print("\n" + "=" * 60)
 print("RECOMMENDATION for fetch_changes_since():")
 print("  Use OR condition on:")
 print("    - created_date > timestamp (new records)")
-print("    - resolution_action_updated_date > timestamp (status changes)")
+print("    - last_modified_date > timestamp (status changes)")
 print("    - closed_date > timestamp (recently closed)")
 
 # COMMAND ----------
@@ -450,24 +460,25 @@ if 'created_date' in raw_df.columns and 'closed_date' in raw_df.columns:
     print(f"\nClosed requests: {len(closed_requests):,}")
     print(f"With valid resolution time: {len(valid_resolution):,}")
     
-    print(f"\nResolution time statistics (hours):")
-    print(f"  Mean: {valid_resolution['resolution_hours'].mean():.1f}")
-    print(f"  Median: {valid_resolution['resolution_hours'].median():.1f}")
-    print(f"  25th percentile: {valid_resolution['resolution_hours'].quantile(0.25):.1f}")
-    print(f"  75th percentile: {valid_resolution['resolution_hours'].quantile(0.75):.1f}")
-    print(f"  95th percentile: {valid_resolution['resolution_hours'].quantile(0.95):.1f}")
-    
-    # Resolution time by borough
-    if 'borough' in valid_resolution.columns:
-        print(f"\nMedian resolution time by borough (hours):")
-        borough_resolution = valid_resolution.groupby('borough')['resolution_hours'].median().sort_values()
-        for borough, hours in borough_resolution.items():
-            print(f"  {borough}: {hours:.1f}")
+    if len(valid_resolution) > 0:
+        print(f"\nResolution time statistics (hours):")
+        print(f"  Mean: {valid_resolution['resolution_hours'].mean():.1f}")
+        print(f"  Median: {valid_resolution['resolution_hours'].median():.1f}")
+        print(f"  25th percentile: {valid_resolution['resolution_hours'].quantile(0.25):.1f}")
+        print(f"  75th percentile: {valid_resolution['resolution_hours'].quantile(0.75):.1f}")
+        print(f"  95th percentile: {valid_resolution['resolution_hours'].quantile(0.95):.1f}")
+        
+        # Resolution time by ward
+        if 'ward' in valid_resolution.columns:
+            print(f"\nMedian resolution time by top wards (hours):")
+            ward_resolution = valid_resolution.groupby('ward')['resolution_hours'].median().sort_values()
+            for ward, hours in ward_resolution.head(10).items():
+                print(f"  Ward {ward}: {hours:.1f}")
 
 # COMMAND ----------
 
 # Resolution time distribution
-if 'resolution_hours' in valid_resolution.columns:
+if 'resolution_hours' in valid_resolution.columns and len(valid_resolution) > 0:
     fig = px.histogram(
         valid_resolution[valid_resolution['resolution_hours'] <= 168],  # Up to 7 days
         x='resolution_hours',
@@ -550,8 +561,12 @@ print(f"Weekend drop: {(1 - weekend_avg/weekday_avg)*100:.1f}%")
 
 # COMMAND ----------
 
-# Hourly patterns
-raw_df['hour'] = raw_df['created_dt'].dt.hour
+# Hourly patterns (Chicago 311 has created_hour field)
+if 'created_hour' in raw_df.columns:
+    raw_df['hour'] = pd.to_numeric(raw_df['created_hour'], errors='coerce')
+else:
+    raw_df['hour'] = raw_df['created_dt'].dt.hour
+
 hourly_counts = raw_df.groupby('hour').size().reset_index(name='count')
 
 fig = px.bar(
@@ -572,55 +587,66 @@ fig.show()
 
 # COMMAND ----------
 
-# Borough distribution
-if 'borough' in raw_df.columns:
-    borough_daily = raw_df.groupby(['date', 'borough']).size().reset_index(name='count')
-    borough_daily['date'] = pd.to_datetime(borough_daily['date'])
+# Ward distribution
+if 'ward' in raw_df.columns:
+    ward_daily = raw_df.groupby(['date', 'ward']).size().reset_index(name='count')
+    ward_daily['date'] = pd.to_datetime(ward_daily['date'])
+    
+    # Top 5 wards
+    top_wards = raw_df['ward'].value_counts().head(5).index.tolist()
+    ward_daily_top = ward_daily[ward_daily['ward'].isin(top_wards)]
     
     fig = px.line(
-        borough_daily,
+        ward_daily_top,
         x='date',
         y='count',
-        color='borough',
-        title='Daily Request Volume by Borough',
-        labels={'date': 'Date', 'count': 'Requests', 'borough': 'Borough'}
+        color='ward',
+        title='Daily Request Volume by Top 5 Wards',
+        labels={'date': 'Date', 'count': 'Requests', 'ward': 'Ward'}
     )
     fig.update_layout(hovermode='x unified')
     fig.show()
 
 # COMMAND ----------
 
-# Borough summary
-if 'borough' in raw_df.columns:
-    borough_summary = raw_df.groupby('borough').agg(
-        total_requests=('unique_key', 'count'),
-        pct_closed=('status', lambda x: (x == 'Closed').mean()),
-        avg_resolution_hours=('resolution_hours', 'mean') if 'resolution_hours' in raw_df.columns else ('unique_key', 'count')
+# Ward summary
+if 'ward' in raw_df.columns:
+    ward_summary = raw_df.groupby('ward').agg(
+        total_requests=('sr_number', 'count'),
+        pct_closed=('status', lambda x: (x == 'Completed').mean() if len(x) > 0 else 0),
     ).reset_index()
     
-    print("BOROUGH SUMMARY")
+    if 'resolution_hours' in raw_df.columns:
+        resolution_by_ward = raw_df.groupby('ward')['resolution_hours'].mean()
+        ward_summary = ward_summary.merge(
+            resolution_by_ward.reset_index().rename(columns={'resolution_hours': 'avg_resolution_hours'}),
+            on='ward',
+            how='left'
+        )
+    
+    print("WARD SUMMARY")
     print("=" * 60)
-    display(borough_summary.sort_values('total_requests', ascending=False))
+    display(ward_summary.sort_values('total_requests', ascending=False).head(15))
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Complaint Type Analysis
+# MAGIC ## 9. Service Request Type Analysis
 
 # COMMAND ----------
 
-# Top complaint types
-if 'complaint_type' in raw_df.columns:
-    complaint_counts = raw_df.groupby('complaint_type').size().reset_index(name='count')
-    top_complaints = complaint_counts.nlargest(20, 'count')
+# Top SR types
+if 'sr_type' in raw_df.columns:
+    sr_counts = raw_df.groupby('sr_type').size().reset_index(name='count')
+    top_sr = sr_counts.nlargest(20, 'count')
     
     fig = px.bar(
-        top_complaints,
+        top_sr,
         x='count',
-        y='complaint_type',
+        y='sr_type',
         orientation='h',
-        title='Top 20 Complaint Types',
-        labels={'complaint_type': 'Complaint Type', 'count': 'Total Requests'},
+        title='Top 20 Service Request Types',
+        labels={'sr_type': 'Service Request Type', 'count': 'Total Requests'},
         color='count',
         color_continuous_scale='Viridis'
     )
@@ -646,14 +672,14 @@ print("""
 ├─────────────────────────────────────────────────────────────────────┤
 │ Column              │ Expectation                    │ Threshold    │
 ├─────────────────────────────────────────────────────────────────────┤
-│ unique_key          │ not_be_null                    │ 100%         │
-│ unique_key          │ be_unique                      │ warning only │
+│ sr_number           │ not_be_null                    │ 100%         │
+│ sr_number           │ be_unique                      │ warning only │
 │ created_date        │ not_be_null                    │ 100%         │
-│ complaint_type      │ not_be_null                    │ mostly=0.95  │
-│ borough             │ not_be_null                    │ mostly=0.90  │
-│ borough             │ be_in_set                      │ mostly=0.95  │
-│ latitude            │ be_between(40.4, 41.0)         │ mostly=0.90  │
-│ longitude           │ be_between(-74.3, -73.6)       │ mostly=0.90  │
+│ sr_type             │ not_be_null                    │ mostly=0.95  │
+│ status              │ not_be_null                    │ mostly=0.95  │
+│ ward                │ not_be_null                    │ mostly=0.90  │
+│ latitude            │ be_between(41.6, 42.1)         │ mostly=0.90  │
+│ longitude           │ be_between(-87.95, -87.5)      │ mostly=0.90  │
 │ table               │ row_count >= 1000              │ critical     │
 └─────────────────────────────────────────────────────────────────────┘
 
@@ -661,7 +687,7 @@ print("""
 │ SILVER LAYER EXPECTATIONS (stricter after cleaning)                 │
 ├─────────────────────────────────────────────────────────────────────┤
 │ All Bronze expectations PLUS:                                       │
-│ borough             │ be_in_set (standardized)       │ 100%         │
+│ ward                │ be_in_set (valid wards 1-50)   │ 100%         │
 │ latitude            │ be_between                     │ mostly=0.99  │
 │ longitude           │ be_between                     │ mostly=0.99  │
 │ status              │ be_in_set                      │ mostly=0.99  │
@@ -678,16 +704,16 @@ print("""
 ┌─────────────────────────────────────────────────────────────────────┐
 │ SCD TYPE 2 DESIGN                                                   │
 ├─────────────────────────────────────────────────────────────────────┤
-│ Business Key        │ unique_key                                    │
-│ Sequence Column     │ resolution_action_updated_date                │
-│ Tracked Columns     │ status, resolution_description, closed_date   │
-│ Change Detection    │ created_date, resolution_action_updated_date, │
+│ Business Key        │ sr_number                                     │
+│ Sequence Column     │ last_modified_date                            │
+│ Tracked Columns     │ status, closed_date                           │
+│ Change Detection    │ created_date, last_modified_date,             │
 │                     │ closed_date (for incremental fetch)           │
 ├─────────────────────────────────────────────────────────────────────┤
 │ Expected Transitions:                                               │
-│   Open → In Progress → Closed                                       │
-│   Open → Assigned → Started → Closed                                │
-│   Open → Pending → Closed                                           │
+│   Open → In Progress → Completed                                    │
+│   Open → Cancelled                                                  │
+│   Open → Duplicate                                                  │
 ├─────────────────────────────────────────────────────────────────────┤
 │ Version Rate:       │ ~1.5-3.0 versions per request (target)        │
 └─────────────────────────────────────────────────────────────────────┘
@@ -733,23 +759,23 @@ exploration_summary = {
         "daily_mean",
         "daily_std",
         "weekend_drop_pct",
-        "null_rate_borough",
+        "null_rate_ward",
         "null_rate_latitude",
-        "unique_key_duplicates_pct",
+        "sr_number_duplicates_pct",
         "median_resolution_hours",
         "exploration_timestamp"
     ],
     "value": [
         str(len(raw_df)),
-        str(raw_df['created_dt'].min().date()),
-        str(raw_df['created_dt'].max().date()),
+        str(raw_df['created_dt'].min().date()) if raw_df['created_dt'].notna().any() else "N/A",
+        str(raw_df['created_dt'].max().date()) if raw_df['created_dt'].notna().any() else "N/A",
         f"{daily_counts['count'].mean():.0f}",
         f"{daily_counts['count'].std():.0f}",
         f"{(1 - weekend_avg/weekday_avg)*100:.1f}",
-        f"{raw_df['borough'].isna().mean()*100:.1f}",
+        f"{raw_df['ward'].isna().mean()*100:.1f}" if 'ward' in raw_df.columns else "N/A",
         f"{raw_df['latitude'].isna().mean()*100:.1f}" if 'latitude' in raw_df.columns else "N/A",
-        f"{(len(raw_df) - raw_df['unique_key'].nunique())/len(raw_df)*100:.2f}",
-        f"{valid_resolution['resolution_hours'].median():.1f}" if 'resolution_hours' in valid_resolution.columns else "N/A",
+        f"{(len(raw_df) - raw_df['sr_number'].nunique())/len(raw_df)*100:.2f}",
+        f"{valid_resolution['resolution_hours'].median():.1f}" if 'resolution_hours' in valid_resolution.columns and len(valid_resolution) > 0 else "N/A",
         datetime.now().isoformat()
     ]
 }
@@ -757,7 +783,7 @@ exploration_summary = {
 summary_df = spark.createDataFrame(pd.DataFrame(exploration_summary))
 
 # Uncomment to save to Unity Catalog
-# summary_df.write.format("delta").mode("overwrite").saveAsTable("main.nyc311.exploration_summary")
+# summary_df.write.format("delta").mode("overwrite").saveAsTable("main.chi311.exploration_summary")
 
 display(summary_df)
 
@@ -769,7 +795,7 @@ display(summary_df)
 # MAGIC | Step | Notebook | Purpose |
 # MAGIC |------|----------|---------|
 # MAGIC | 1 | `01_data_quality_checks.py` | Implement Great Expectations suites based on findings |
-# MAGIC | 2 | `nyc311_scd2_pipeline.sql` | Build Lakeflow pipeline with SCD Type 2 |
+# MAGIC | 2 | `chi311_scd2_pipeline.sql` | Build Lakeflow pipeline with SCD Type 2 |
 # MAGIC | 3 | `02_feature_engineering.py` | Create temporal and lag features |
 # MAGIC | 4 | `03_model_experimentation.py` | Train Prophet with identified seasonality |
 # MAGIC | 5 | `04_ml_forecasting.py` | Production model training with MLflow |
@@ -778,8 +804,8 @@ display(summary_df)
 # MAGIC ### Key Decisions Made:
 # MAGIC 
 # MAGIC 1. **Great Expectations thresholds** derived from actual null rates
-# MAGIC 2. **Borough standardization** rules defined for Silver layer
-# MAGIC 3. **SCD2 change detection** uses `created_date`, `resolution_action_updated_date`, `closed_date`
+# MAGIC 2. **Ward validation** rules defined for Silver layer
+# MAGIC 3. **SCD2 change detection** uses `created_date`, `last_modified_date`, `closed_date`
 # MAGIC 4. **Prophet seasonality** confirmed: strong weekly, moderate daily
 # MAGIC 5. **Anomaly threshold** baseline: mean + 2*std
 
@@ -791,5 +817,4 @@ display(summary_df)
 # MAGIC 
 # MAGIC | Version | Date | Changes |
 # MAGIC |---------|------|---------|
-# MAGIC | 1.0 | 2024-01-15 | Initial exploration |
-# MAGIC | 2.0 | 2024-12-19 | Added GE threshold analysis, SCD2 status analysis, lifecycle analytics |
+# MAGIC | 1.0 | 2024-12-20 | Initial exploration with Chicago 311 data |

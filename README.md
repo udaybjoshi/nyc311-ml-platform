@@ -1,4 +1,4 @@
-# 🗽 NYC 311 Service Request Intelligence Platform
+# 🏙️ Chicago 311 Service Request Intelligence Platform
 
 > **A Production-Grade ML Portfolio Project** demonstrating end-to-end machine learning engineering on Databricks Free Edition with Lakeflow Declarative Pipelines, SCD Type 2 history tracking, and MLflow.
 
@@ -6,6 +6,7 @@
 [![MLflow](https://img.shields.io/badge/MLflow-Experiment%20Tracking-0194E2?logo=mlflow)](https://mlflow.org)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python)](https://python.org)
 [![SCD2](https://img.shields.io/badge/SCD-Type%202-green)](docs/DATA_ARCHITECTURE.md)
+[![Great Expectations](https://img.shields.io/badge/Great%20Expectations-Data%20Quality-orange)](https://greatexpectations.io)
 
 ---
 
@@ -26,7 +27,7 @@
 
 ### Problem Statement
 
-NYC's 311 service handles **millions of non-emergency requests annually** - from noise complaints to infrastructure issues. City operations teams face a critical challenge: **detecting unusual spikes in service requests before they overwhelm resources**.
+Chicago's 311 service handles **millions of non-emergency requests annually** - from pothole repairs to garbage collection issues. City operations teams face a critical challenge: **detecting unusual spikes in service requests before they overwhelm resources**.
 
 ### Solution
 
@@ -40,9 +41,9 @@ This platform provides:
 
 | User | Need | How This Helps |
 |------|------|----------------|
-| **City Operations Manager** | Plan staffing for upcoming week | 7-day demand forecasts by borough |
+| **City Operations Manager** | Plan staffing for upcoming week | 7-day demand forecasts by ward |
 | **311 Call Center Supervisor** | Spot unusual activity | Real-time anomaly alerts |
-| **Resource Planner** | Allocate resources by complaint type | Historical patterns + predictions |
+| **Resource Planner** | Allocate resources by service type | Historical patterns + predictions |
 | **Data Analyst** | Understand request lifecycle | Time-in-status analysis via SCD2 |
 
 ---
@@ -54,13 +55,13 @@ This project follows the [8-component ML portfolio framework](docs/PORTFOLIO_FRA
 | Component | Status | Implementation |
 |-----------|--------|----------------|
 | 1. **Problem Framing & Metrics** | ✅ | Business KPIs + ML metrics defined |
-| 2. **Unique Data Sourcing** | ✅ | NYC Open Data API with continuous collection |
+| 2. **Unique Data Sourcing** | ✅ | Chicago Data Portal API with continuous collection |
 | 3. **Data Storage** | ✅ | Delta Lake with SCD Type 2 (Medallion Architecture) |
 | 4. **Feature Engineering** | ✅ | Temporal, categorical, and lag features |
 | 5. **Labeling Strategy** | ✅ | Programmatic labeling via Prophet thresholds |
 | 6. **Model Training & Evaluation** | ✅ | MLflow experiment tracking + hyperparameter tuning |
 | 7. **Deployment** | ✅ | Batch predictions + Streamlit dashboard |
-| 8. **Monitoring & Feedback** | ✅ | Prediction logging + data quality checks |
+| 8. **Monitoring & Feedback** | ✅ | Prediction logging + Great Expectations data quality |
 
 See [docs/PORTFOLIO_FRAMEWORK.md](docs/PORTFOLIO_FRAMEWORK.md) for detailed alignment documentation.
 
@@ -72,7 +73,7 @@ See [docs/PORTFOLIO_FRAMEWORK.md](docs/PORTFOLIO_FRAMEWORK.md) for detailed alig
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         NYC 311 INTELLIGENCE PLATFORM                       │
+│                      CHICAGO 311 INTELLIGENCE PLATFORM                      │
 │                      (Databricks Free Edition + Lakeflow)                   │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
@@ -80,31 +81,31 @@ See [docs/PORTFOLIO_FRAMEWORK.md](docs/PORTFOLIO_FRAMEWORK.md) for detailed alig
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  DATA INGESTION (Continuous Collection)                                     │
 │  ┌─────────────────┐                                                        │
-│  │ NYC Open Data   │ ──API──▶ Scheduled Jobs ──▶ Bronze Layer               │
-│  │ Socrata API     │         (Daily at 6 AM)                                │
+│  │ Chicago Data    │ ──API──▶ Scheduled Jobs ──▶ Bronze Layer               │
+│  │ Portal API      │         (Daily at 6 AM)                                │
 │  └─────────────────┘                                                        │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  LAKEFLOW DECLARATIVE PIPELINE (ETL with SCD Type 2)                        │
-│                                                                             │
-│  ┌────────────────┐     ┌─────────────────────┐     ┌────────────────┐      │
-│  │    BRONZE      │     │       SILVER        │     │      GOLD      │      │
-│  │  ┌──────────┐  │     │  ┌───────────────┐  │     │ ┌────────────┐ │      │
-│  │  │ Raw JSON │  │ ──▶ │  │  SCD Type 2   │  │ ──▶ │ │ Aggregates │ │      │
-│  │  │ Landing  │  │     │  │  History      │  │     │ │ Features   │ │      │
-│  │  └──────────┘  │     │  │ __START_AT    │  │     │ └────────────┘ │      │
-│  │  ┌──────────┐  │     │  │ __END_AT      │  │     │ ┌────────────┐ │      │
-│  │  │ Staged   │  │     │  └───────────────┘  │     │ │ Status     │ │      │
-│  │  │ Cleaned  │  │     │         │           │     │ │ Transitions│ │      │
-│  │  └──────────┘  │     │         ▼           │     │ └────────────┘ │      │
-│  └────────────────┘     │  ┌───────────────┐  │     └────────────────┘      │
-│                         │  │Current View   │  │                             │
-│  APPLY CHANGES INTO ──▶ │  │(__END_AT=NULL)│  │                             │
-│                         │  └───────────────┘  │                             │
-│                         └─────────────────────┘                             │
-│                                                                             │
+│                                                                              │
+│  ┌────────────────┐     ┌─────────────────────┐     ┌────────────────┐     │
+│  │    BRONZE      │     │       SILVER        │     │      GOLD      │     │
+│  │  ┌──────────┐  │     │  ┌───────────────┐  │     │ ┌────────────┐ │     │
+│  │  │ Raw JSON │  │ ──▶ │  │  SCD Type 2   │  │ ──▶ │ │ Aggregates │ │     │
+│  │  │ Landing  │  │     │  │  History      │  │     │ │ Features   │ │     │
+│  │  └──────────┘  │     │  │ __START_AT    │  │     │ └────────────┘ │     │
+│  │  ┌──────────┐  │     │  │ __END_AT      │  │     │ ┌────────────┐ │     │
+│  │  │ Staged   │  │     │  └───────────────┘  │     │ │ Status     │ │     │
+│  │  │ Cleaned  │  │     │         │           │     │ │ Transitions│ │     │
+│  │  └──────────┘  │     │         ▼           │     │ └────────────┘ │     │
+│  └────────────────┘     │  ┌───────────────┐  │     └────────────────┘     │
+│                         │  │Current View   │  │                            │
+│  APPLY CHANGES INTO ──▶ │  │(__END_AT=NULL)│  │                            │
+│                         │  └───────────────┘  │                            │
+│                         └─────────────────────┘                            │
+│                                                                              │
 │  Data Quality Expectations enforced at each layer                           │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
@@ -141,7 +142,7 @@ See [docs/PORTFOLIO_FRAMEWORK.md](docs/PORTFOLIO_FRAMEWORK.md) for detailed alig
 
 ```
 ┌────────────┬──────────────┬─────────────────────┬─────────────────────┐
-│ unique_key │ status       │ __START_AT          │ __END_AT            │
+│ sr_number │ status       │ __START_AT          │ __END_AT            │
 ├────────────┼──────────────┼─────────────────────┼─────────────────────┤
 │ SR12345    │ Open         │ 2024-12-01 09:00:00 │ 2024-12-05 14:00:00 │
 │ SR12345    │ In Progress  │ 2024-12-05 14:00:00 │ 2024-12-18 10:00:00 │
@@ -162,6 +163,7 @@ This enables:
 | **Storage** | Delta Lake + Unity Catalog | ACID transactions, time travel, governance |
 | **ETL** | Lakeflow Declarative Pipelines | Declarative SQL/Python, auto-optimization |
 | **SCD2** | `APPLY CHANGES INTO` | Built-in CDC handling for history tracking |
+| **Data Quality** | Great Expectations | Declarative expectations, data docs, profiling |
 | **ML Tracking** | MLflow | Native Databricks integration, experiment management |
 | **Forecasting** | Prophet | Handles seasonality, missing data, outliers |
 | **Dashboard** | Streamlit | Fast prototyping, Python native |
@@ -180,7 +182,7 @@ This enables:
 ### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/udaybjoshi/nyc311-intelligence-platform.git
+git clone https://github.com/YOUR_USERNAME/nyc311-intelligence-platform.git
 cd nyc311-intelligence-platform
 ```
 
@@ -243,7 +245,7 @@ streamlit run dashboard.py
 
 **See:** [docs/DATA_SOURCING.md](docs/DATA_SOURCING.md)
 
-- **Source**: NYC Open Data Portal (Socrata API)
+- **Source**: Chicago Open Data Portal (Socrata API)
 - **Endpoint**: `https://data.cityofnewyork.us/resource/erm2-nwe9.json`
 - **Volume**: ~8,000-12,000 requests/day
 - **Collection**: Daily incremental loads
@@ -271,11 +273,11 @@ SELECT * FROM silver_current_311_requests WHERE status = 'OPEN';
 
 -- Full history for a request
 SELECT * FROM silver_scd2_311_requests 
-WHERE unique_key = 'SR12345' ORDER BY __START_AT;
+WHERE sr_number = 'SR12345' ORDER BY __START_AT;
 
 -- Point-in-time query
 SELECT * FROM silver_scd2_311_requests
-WHERE unique_key = 'SR12345'
+WHERE sr_number = 'SR12345'
   AND __START_AT <= '2024-12-10'
   AND (__END_AT > '2024-12-10' OR __END_AT IS NULL);
 
@@ -300,7 +302,7 @@ GROUP BY status;
 - Year-over-year comparison
 
 **Categorical Features:**
-- Borough encoding
+- Ward encoding
 - Complaint type groupings
 - Agency assignment
 
@@ -352,7 +354,7 @@ anomaly_score = (actual_count - forecast_upper_bound) / forecast_upper_bound
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 nyc311-intelligence-platform/
@@ -373,7 +375,7 @@ nyc311-intelligence-platform/
 │
 ├── notebooks/                          # Databricks notebooks
 │   ├── 00_setup_exploration.py         # Initial setup & EDA
-│   ├── 01_data_quality_checks.py       # Data validation notebook
+│   ├── 01_data_quality_checks.py       # Great Expectations validation
 │   ├── 02_feature_engineering.py       # Feature development
 │   ├── 03_model_experimentation.py     # Model experiments
 │   ├── 04_ml_forecasting.py            # Production model training
@@ -381,25 +383,35 @@ nyc311-intelligence-platform/
 │   └── poc_incremental_scd2.py         # SCD2 proof of concept demo
 │
 ├── pipelines/                          # Lakeflow Declarative Pipelines
-│   ├── nyc311_scd2_pipeline.sql        # Main ETL with SCD Type 2
-│   └── expectations/                   # Data quality rules
+│   ├── chi311_scd2_pipeline.sql        # Main ETL with SCD Type 2
+│   └── expectations/                   # Legacy expectations (deprecated)
 │       └── data_quality_rules.yaml
 │
+├── great_expectations/                 # Great Expectations configuration
+│   ├── great_expectations.yml          # GE configuration
+│   └── expectations/                   # Expectation suites
+│       ├── bronze_311_requests_suite.json
+│       ├── silver_311_requests_suite.json
+│       └── gold_daily_aggregates_suite.json
+│
 ├── src/                                # Python source code
-│   └── nyc311/
+│   └── chi311/
 │       ├── __init__.py
 │       ├── ingestion/
 │       │   ├── __init__.py
-│       │   └── api_client.py           # NYC Open Data API client
+│       │   └── api_client.py           # Chicago Open Data API client
 │       ├── features/
 │       │   ├── __init__.py
 │       │   └── transformers.py         # Feature engineering functions
 │       ├── models/
 │       │   ├── __init__.py
 │       │   └── forecaster.py           # Prophet model wrapper
-│       └── monitoring/
+│       ├── monitoring/
+│       │   ├── __init__.py
+│       │   └── logger.py               # Prediction logging
+│       └── quality/
 │           ├── __init__.py
-│           └── logger.py               # Prediction logging
+│           └── ge_validator.py         # Great Expectations utilities
 │
 ├── tests/                              # Test suite
 │   ├── unit/
@@ -452,7 +464,7 @@ nyc311-intelligence-platform/
 ### Phase 2: Advanced Features
 - [ ] Real-time streaming with Kafka
 - [ ] Multi-step forecasting (7, 14, 30 days)
-- [ ] Per-borough specialized models
+- [ ] Per-ward specialized models
 - [ ] Weather data integration
 
 ### Phase 3: Production Hardening
@@ -472,17 +484,11 @@ nyc311-intelligence-platform/
 
 Based on the ML portfolio framework, these resources helped build this project:
 
-- [Designing Machine Learning Systems](https://www.oreilly.com/library/view/designing-machine-learning/9781098107956/) - Chip Huyen
-- [Software Engineering for Data Scientists](https://www.oreilly.com/library/view/software-engineering-for/9781098136194/) - Catherine Nelson
-- [Databricks Lakeflow Documentation](https://docs.databricks.com/en/dlt/)
-- [MLflow Documentation](https://mlflow.org/docs/latest/index.html)
-- [The Data Warehouse Toolkit](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/books/data-warehouse-dw-toolkit/) - Kimball (SCD patterns)
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+- 📕 [Designing Machine Learning Systems](https://www.oreilly.com/library/view/designing-machine-learning/9781098107956/) - Chip Huyen
+- 📗 [Software Engineering for Data Scientists](https://www.oreilly.com/library/view/software-engineering-for/9781098136194/) - Catherine Nelson
+- 📘 [Databricks Lakeflow Documentation](https://docs.databricks.com/en/dlt/)
+- 📙 [MLflow Documentation](https://mlflow.org/docs/latest/index.html)
+- 📓 [The Data Warehouse Toolkit](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/books/data-warehouse-dw-toolkit/) - Kimball (SCD patterns)
 
 ---
 
@@ -491,5 +497,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 MIT License - see [LICENSE](LICENSE) for details.
 
 ---
-
 
