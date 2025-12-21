@@ -1,13 +1,13 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Chicago 311 - Data Quality Checks with Great Expectations
-# MAGIC 
+# MAGIC
 # MAGIC **Purpose**: Comprehensive data validation using Great Expectations framework
-# MAGIC 
+# MAGIC
 # MAGIC **Framework Component**: Data Sourcing (Component 2) - Quality Validation
-# MAGIC 
+# MAGIC
 # MAGIC ## Findings from 00_setup_exploration.py
-# MAGIC 
+# MAGIC
 # MAGIC | Finding | Value | Implication |
 # MAGIC |---------|-------|-------------|
 # MAGIC | Null rates | Most fields <1% | Use strict `mostly=0.99` thresholds |
@@ -16,7 +16,7 @@
 # MAGIC | Coordinates | 41.6-42.1 lat, -87.95 to -87.5 lon | Chicago bounding box |
 # MAGIC | Duplicates | 0% | sr_number is unique |
 # MAGIC | Info calls | 40% of volume | "311 INFORMATION ONLY CALL" in Ward 28 |
-# MAGIC 
+# MAGIC
 # MAGIC ## Quality Dimensions
 # MAGIC 1. **Completeness**: Are required fields populated?
 # MAGIC 2. **Validity**: Are values within expected ranges?
@@ -48,7 +48,7 @@ print(f"Great Expectations version: {gx.__version__}")
 
 # MAGIC %md
 # MAGIC ## 1. Initialize Great Expectations Context
-# MAGIC 
+# MAGIC
 # MAGIC We use an **Ephemeral Data Context** which is ideal for Databricks notebooks.
 # MAGIC It doesn't require persistent storage and works entirely in memory.
 
@@ -64,7 +64,7 @@ print(f"  Context type: {type(context).__name__}")
 
 # MAGIC %md
 # MAGIC ## 2. Load Sample Data
-# MAGIC 
+# MAGIC
 # MAGIC Load data from the Chicago Data Portal API for validation testing.
 
 # COMMAND ----------
@@ -103,14 +103,14 @@ df.printSchema()
 
 # MAGIC %md
 # MAGIC ## 3. Define Expectation Suites
-# MAGIC 
+# MAGIC
 # MAGIC Based on findings from `00_setup_exploration.py`:
 # MAGIC - **Bronze**: Raw data validation (lenient) - validates API response
 # MAGIC - **Silver**: Cleaned data validation (strict) - validates after transformations
 # MAGIC - **Gold**: Aggregated data validation (business rules)
-# MAGIC 
+# MAGIC
 # MAGIC ### Key Thresholds from Exploration
-# MAGIC 
+# MAGIC
 # MAGIC | Field | Null Rate | Threshold |
 # MAGIC |-------|-----------|-----------|
 # MAGIC | sr_number | 0.0% | 100% (critical) |
@@ -280,18 +280,13 @@ bronze_suite.add_expectation(
     )
 )
 
-# ============================================
-# SAVE THE SUITE TO CONTEXT (REQUIRED!)
-# ============================================
-context.add_or_update_expectation_suite(expectation_suite=bronze_suite)
-
-print(f"✓ Bronze suite created and saved with {len(bronze_suite.expectations)} expectations")
+print(f"✓ Bronze suite created with {len(bronze_suite.expectations)} expectations")
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Silver Layer Expectations
-# MAGIC 
+# MAGIC
 # MAGIC Silver layer has stricter expectations after data cleaning:
 # MAGIC - All nulls in required fields removed
 # MAGIC - Coordinates validated
@@ -382,12 +377,7 @@ silver_suite.add_expectation(
     )
 )
 
-# ============================================
-# SAVE THE SUITE TO CONTEXT (REQUIRED!)
-# ============================================
-context.add_or_update_expectation_suite(expectation_suite=silver_suite)
-
-print(f"✓ Silver suite created and saved with {len(silver_suite.expectations)} expectations")
+print(f"✓ Silver suite created with {len(silver_suite.expectations)} expectations")
 
 # COMMAND ----------
 
@@ -397,7 +387,7 @@ print(f"✓ Silver suite created and saved with {len(silver_suite.expectations)}
 # COMMAND ----------
 
 # Convert Spark DataFrame to Pandas for GE validation
-# (GE with Spark has issues on serverless compute - PERSIST TABLE not supported)
+# (GE with Spark has issues on serverless compute)
 pdf_bronze = df.toPandas()
 
 print(f"✓ Converted to Pandas DataFrame: {len(pdf_bronze):,} rows")
@@ -445,15 +435,37 @@ success_pct = bronze_results.statistics.get('success_percent')
 if success_pct is not None:
     print(f"Success Rate: {success_pct:.1f}%")
 else:
+    # Calculate manually
     evaluated = bronze_results.statistics['evaluated_expectations'] or 0
     successful = bronze_results.statistics['successful_expectations'] or 0
     if evaluated > 0:
-        calculated_pct = (successful/evaluated)*100
-        print(f"Success Rate: {calculated_pct:.1f}%")
-        bronze_results.statistics['success_percent'] = calculated_pct
+        print(f"Success Rate: {(successful/evaluated)*100:.1f}%")
     else:
         print("Success Rate: N/A (no expectations evaluated)")
-        bronze_results.statistics['success_percent'] = 0.0
+
+# COMMAND ----------
+
+# Show failed expectations with details
+print("\nDETAILED RESULTS:")
+print("-" * 60)
+for result in bronze_results.results:
+    status = "✓" if result.success else "✗"
+    exp_type = result.expectation_config.expectation_type.replace("expect_", "")
+    column = result.expectation_config.kwargs.get("column", "table")
+    print(f"{status} {exp_type} | {column}")
+    if not result.success:
+        print(f"   Error: {result.exception_info}")
+        print(f"   Result: {result.result}")
+
+# COMMAND ----------
+
+# Check what's in the bronze suite
+print(f"Suite name: {bronze_suite.expectation_suite_name}")
+print(f"Number of expectations: {len(bronze_suite.expectations)}")
+
+# List all expectations
+for i, exp in enumerate(bronze_suite.expectations):
+    print(f"{i+1}. {exp.expectation_type} - {exp.kwargs.get('column', 'table')}")
 
 # COMMAND ----------
 
@@ -485,7 +497,7 @@ display(bronze_details_df.orderBy("success", "column"))
 
 # MAGIC %md
 # MAGIC ## 6. Run Validation - Silver Layer
-# MAGIC 
+# MAGIC
 # MAGIC Apply Silver layer transformations based on exploration findings:
 # MAGIC 1. Standardize status to uppercase
 # MAGIC 2. Filter invalid coordinates
@@ -526,10 +538,9 @@ print(f"Rows filtered: {df.count() - df_silver.count():,}")
 
 # COMMAND ----------
 
-# Create new batch for Silver data (convert to Pandas)
-pdf_silver = df_silver.toPandas()
+# Create new batch for Silver data
 silver_asset = datasource.add_dataframe_asset(name="chi311_silver_data")
-silver_batch = silver_asset.build_batch_request(dataframe=pdf_silver)
+silver_batch = silver_asset.build_batch_request(dataframe=df_silver)
 
 # Get validator for Silver suite
 silver_validator = context.get_validator(
@@ -547,21 +558,7 @@ print(f"Overall Success: {'✓ PASSED' if silver_results.success else '✗ FAILE
 print(f"Evaluated Expectations: {silver_results.statistics['evaluated_expectations']}")
 print(f"Successful: {silver_results.statistics['successful_expectations']}")
 print(f"Failed: {silver_results.statistics['unsuccessful_expectations']}")
-
-# Handle None for success_percent
-success_pct = silver_results.statistics.get('success_percent')
-if success_pct is not None:
-    print(f"Success Rate: {success_pct:.1f}%")
-else:
-    evaluated = silver_results.statistics['evaluated_expectations'] or 0
-    successful = silver_results.statistics['successful_expectations'] or 0
-    if evaluated > 0:
-        calculated_pct = (successful/evaluated)*100
-        print(f"Success Rate: {calculated_pct:.1f}%")
-        silver_results.statistics['success_percent'] = calculated_pct
-    else:
-        print("Success Rate: N/A (no expectations evaluated)")
-        silver_results.statistics['success_percent'] = 0.0
+print(f"Success Rate: {silver_results.statistics['success_percent']:.1f}%")
 
 # COMMAND ----------
 
@@ -605,9 +602,9 @@ else:
 
 # MAGIC %md
 # MAGIC ## 8. Data Quality Insights from Exploration
-# MAGIC 
+# MAGIC
 # MAGIC ### Key Findings to Remember
-# MAGIC 
+# MAGIC
 # MAGIC | Finding | Value | Action |
 # MAGIC |---------|-------|--------|
 # MAGIC | Info calls | 40% of volume | Filter for forecasting: `sr_type != '311 INFORMATION ONLY CALL'` |
@@ -634,26 +631,22 @@ print(f"  Info calls removed: {df.count() - df_service_only.count():,} ({(df.cou
 # COMMAND ----------
 
 # Create summary report
-# Get success rates (already calculated in validation sections)
-bronze_success_rate = bronze_results.statistics.get('success_percent') or 0.0
-silver_success_rate = silver_results.statistics.get('success_percent') or 0.0
-
 report = {
     "run_timestamp": datetime.now().isoformat(),
     "bronze": {
         "success": bronze_results.success,
-        "total_expectations": bronze_results.statistics['evaluated_expectations'] or 0,
-        "passed": bronze_results.statistics['successful_expectations'] or 0,
-        "failed": bronze_results.statistics['unsuccessful_expectations'] or 0,
-        "success_rate": bronze_success_rate,
+        "total_expectations": bronze_results.statistics['evaluated_expectations'],
+        "passed": bronze_results.statistics['successful_expectations'],
+        "failed": bronze_results.statistics['unsuccessful_expectations'],
+        "success_rate": bronze_results.statistics['success_percent'],
         "row_count": df.count()
     },
     "silver": {
         "success": silver_results.success,
-        "total_expectations": silver_results.statistics['evaluated_expectations'] or 0,
-        "passed": silver_results.statistics['successful_expectations'] or 0,
-        "failed": silver_results.statistics['unsuccessful_expectations'] or 0,
-        "success_rate": silver_success_rate,
+        "total_expectations": silver_results.statistics['evaluated_expectations'],
+        "passed": silver_results.statistics['successful_expectations'],
+        "failed": silver_results.statistics['unsuccessful_expectations'],
+        "success_rate": silver_results.statistics['success_percent'],
         "row_count": df_silver.count()
     },
     "data_insights": {
@@ -748,18 +741,18 @@ else:
 
 # MAGIC %md
 # MAGIC ## Next Steps
-# MAGIC 
+# MAGIC
 # MAGIC **If quality gate passed:**
 # MAGIC 1. Run **Feature Engineering** (Notebook 02)
 # MAGIC 2. Data is ready for ML pipeline
-# MAGIC 
+# MAGIC
 # MAGIC **If quality gate failed:**
 # MAGIC 1. Review failed expectations above
 # MAGIC 2. Investigate data source issues
 # MAGIC 3. Update cleaning logic in pipeline
-# MAGIC 
+# MAGIC
 # MAGIC ## Key Thresholds (from 00_setup_exploration.py)
-# MAGIC 
+# MAGIC
 # MAGIC | Layer | Field | Expectation | Threshold |
 # MAGIC |-------|-------|-------------|-----------|
 # MAGIC | Bronze | sr_number | not_null | 100% |
@@ -768,7 +761,7 @@ else:
 # MAGIC | Bronze | latitude | between | 41.6-42.1, mostly=0.95 |
 # MAGIC | Silver | status | in_set | ["OPEN", "COMPLETED", "CANCELED"] |
 # MAGIC | Silver | all fields | not_null | 100% |
-# MAGIC 
+# MAGIC
 # MAGIC ## Great Expectations Resources
 # MAGIC - [GE Documentation](https://docs.greatexpectations.io/)
 # MAGIC - [Expectation Gallery](https://greatexpectations.io/expectations/)
