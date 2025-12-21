@@ -280,7 +280,12 @@ bronze_suite.add_expectation(
     )
 )
 
-print(f"✓ Bronze suite created with {len(bronze_suite.expectations)} expectations")
+# ============================================
+# SAVE THE SUITE TO CONTEXT (REQUIRED!)
+# ============================================
+context.add_or_update_expectation_suite(expectation_suite=bronze_suite)
+
+print(f"✓ Bronze suite created and saved with {len(bronze_suite.expectations)} expectations")
 
 # COMMAND ----------
 
@@ -377,7 +382,12 @@ silver_suite.add_expectation(
     )
 )
 
-print(f"✓ Silver suite created with {len(silver_suite.expectations)} expectations")
+# ============================================
+# SAVE THE SUITE TO CONTEXT (REQUIRED!)
+# ============================================
+context.add_or_update_expectation_suite(expectation_suite=silver_suite)
+
+print(f"✓ Silver suite created and saved with {len(silver_suite.expectations)} expectations")
 
 # COMMAND ----------
 
@@ -386,19 +396,25 @@ print(f"✓ Silver suite created with {len(silver_suite.expectations)} expectati
 
 # COMMAND ----------
 
-# Create a pandas datasource
-datasource = context.sources.add_or_update_spark(name="chi311_spark")
+# Convert Spark DataFrame to Pandas for GE validation
+# (GE with Spark has issues on serverless compute - PERSIST TABLE not supported)
+pdf_bronze = df.toPandas()
+
+print(f"✓ Converted to Pandas DataFrame: {len(pdf_bronze):,} rows")
+
+# Create a Pandas datasource (works on serverless)
+datasource = context.sources.add_or_update_pandas(name="chi311_pandas")
 
 # Add data asset for Bronze layer
 data_asset = datasource.add_dataframe_asset(name="chi311_bronze_data")
 
-# Build batch request
-batch_request = data_asset.build_batch_request(dataframe=df)
+# Build batch request with Pandas DataFrame
+batch_request = data_asset.build_batch_request(dataframe=pdf_bronze)
 
 print("✓ Data source configured")
-print(f"  Datasource: chi311_spark")
+print(f"  Datasource: chi311_pandas")
 print(f"  Asset: chi311_bronze_data")
-print(f"  Records: {df.count():,}")
+print(f"  Records: {len(pdf_bronze):,}")
 
 # COMMAND ----------
 
@@ -423,7 +439,21 @@ print(f"Overall Success: {'✓ PASSED' if bronze_results.success else '✗ FAILE
 print(f"Evaluated Expectations: {bronze_results.statistics['evaluated_expectations']}")
 print(f"Successful: {bronze_results.statistics['successful_expectations']}")
 print(f"Failed: {bronze_results.statistics['unsuccessful_expectations']}")
-print(f"Success Rate: {bronze_results.statistics['success_percent']:.1f}%")
+
+# Handle None for success_percent
+success_pct = bronze_results.statistics.get('success_percent')
+if success_pct is not None:
+    print(f"Success Rate: {success_pct:.1f}%")
+else:
+    evaluated = bronze_results.statistics['evaluated_expectations'] or 0
+    successful = bronze_results.statistics['successful_expectations'] or 0
+    if evaluated > 0:
+        calculated_pct = (successful/evaluated)*100
+        print(f"Success Rate: {calculated_pct:.1f}%")
+        bronze_results.statistics['success_percent'] = calculated_pct
+    else:
+        print("Success Rate: N/A (no expectations evaluated)")
+        bronze_results.statistics['success_percent'] = 0.0
 
 # COMMAND ----------
 
@@ -496,9 +526,10 @@ print(f"Rows filtered: {df.count() - df_silver.count():,}")
 
 # COMMAND ----------
 
-# Create new batch for Silver data
+# Create new batch for Silver data (convert to Pandas)
+pdf_silver = df_silver.toPandas()
 silver_asset = datasource.add_dataframe_asset(name="chi311_silver_data")
-silver_batch = silver_asset.build_batch_request(dataframe=df_silver)
+silver_batch = silver_asset.build_batch_request(dataframe=pdf_silver)
 
 # Get validator for Silver suite
 silver_validator = context.get_validator(
@@ -516,7 +547,21 @@ print(f"Overall Success: {'✓ PASSED' if silver_results.success else '✗ FAILE
 print(f"Evaluated Expectations: {silver_results.statistics['evaluated_expectations']}")
 print(f"Successful: {silver_results.statistics['successful_expectations']}")
 print(f"Failed: {silver_results.statistics['unsuccessful_expectations']}")
-print(f"Success Rate: {silver_results.statistics['success_percent']:.1f}%")
+
+# Handle None for success_percent
+success_pct = silver_results.statistics.get('success_percent')
+if success_pct is not None:
+    print(f"Success Rate: {success_pct:.1f}%")
+else:
+    evaluated = silver_results.statistics['evaluated_expectations'] or 0
+    successful = silver_results.statistics['successful_expectations'] or 0
+    if evaluated > 0:
+        calculated_pct = (successful/evaluated)*100
+        print(f"Success Rate: {calculated_pct:.1f}%")
+        silver_results.statistics['success_percent'] = calculated_pct
+    else:
+        print("Success Rate: N/A (no expectations evaluated)")
+        silver_results.statistics['success_percent'] = 0.0
 
 # COMMAND ----------
 
@@ -589,22 +634,26 @@ print(f"  Info calls removed: {df.count() - df_service_only.count():,} ({(df.cou
 # COMMAND ----------
 
 # Create summary report
+# Get success rates (already calculated in validation sections)
+bronze_success_rate = bronze_results.statistics.get('success_percent') or 0.0
+silver_success_rate = silver_results.statistics.get('success_percent') or 0.0
+
 report = {
     "run_timestamp": datetime.now().isoformat(),
     "bronze": {
         "success": bronze_results.success,
-        "total_expectations": bronze_results.statistics['evaluated_expectations'],
-        "passed": bronze_results.statistics['successful_expectations'],
-        "failed": bronze_results.statistics['unsuccessful_expectations'],
-        "success_rate": bronze_results.statistics['success_percent'],
+        "total_expectations": bronze_results.statistics['evaluated_expectations'] or 0,
+        "passed": bronze_results.statistics['successful_expectations'] or 0,
+        "failed": bronze_results.statistics['unsuccessful_expectations'] or 0,
+        "success_rate": bronze_success_rate,
         "row_count": df.count()
     },
     "silver": {
         "success": silver_results.success,
-        "total_expectations": silver_results.statistics['evaluated_expectations'],
-        "passed": silver_results.statistics['successful_expectations'],
-        "failed": silver_results.statistics['unsuccessful_expectations'],
-        "success_rate": silver_results.statistics['success_percent'],
+        "total_expectations": silver_results.statistics['evaluated_expectations'] or 0,
+        "passed": silver_results.statistics['successful_expectations'] or 0,
+        "failed": silver_results.statistics['unsuccessful_expectations'] or 0,
+        "success_rate": silver_success_rate,
         "row_count": df_silver.count()
     },
     "data_insights": {
