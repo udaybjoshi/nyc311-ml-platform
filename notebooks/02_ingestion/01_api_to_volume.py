@@ -1,13 +1,13 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # 01 - API to Volume Ingestion
-# MAGIC 
+# MAGIC
 # MAGIC **Purpose**: Fetch data from Chicago 311 API and save as JSON files in Volume
-# MAGIC 
+# MAGIC
 # MAGIC **Pattern**: API → JSON File → Volume (Landing Zone)
-# MAGIC 
+# MAGIC
 # MAGIC **Schedule**: Daily (fetches previous day's data)
-# MAGIC 
+# MAGIC
 # MAGIC **Source**: https://data.cityofchicago.org/resource/v6vf-nfxy.json
 # MAGIC 
 # MAGIC **Note**: Initial load writes in chunks (50K records per file) to avoid file size limits
@@ -41,7 +41,7 @@ MAX_CHUNKS = 20  # Maximum files for initial load (20 x 50K = 1M records)
 
 # MAGIC %md
 # MAGIC ## Widget Parameters
-# MAGIC 
+# MAGIC
 # MAGIC Run modes:
 # MAGIC - `initial`: Full historical load (last 2 years, written in chunks)
 # MAGIC - `incremental`: Daily incremental (yesterday's data)
@@ -109,10 +109,16 @@ def get_file_count(path: str) -> int:
 # COMMAND ----------
 
 # MAGIC %md
+<<<<<<< Updated upstream
 # MAGIC ## Initial Load (Historical) - Chunked
 # MAGIC 
 # MAGIC Fetches historical data and saves in chunks (50K records per file).
 # MAGIC This avoids the 128MB file size limit in Databricks.
+=======
+# MAGIC ## Initial Load (Historical)
+# MAGIC
+# MAGIC Fetches last 2 years of data for initial setup
+>>>>>>> Stashed changes
 
 # COMMAND ----------
 
@@ -129,13 +135,22 @@ if load_type == "initial":
     print(f"Max chunks: {MAX_CHUNKS}")
     print("=" * 60)
     
+<<<<<<< Updated upstream
     # Fetch and save in chunks
+=======
+    # Fetch and save in chunks (50K records per file)
+    CHUNK_SIZE = 50000
+>>>>>>> Stashed changes
     offset = 0
     file_count = 0
     total_records = 0
     
     while True:
+<<<<<<< Updated upstream
         print(f"\nFetching records {offset:,} to {offset + CHUNK_SIZE:,}...")
+=======
+        print(f"\nFetching records {offset} to {offset + CHUNK_SIZE}...")
+>>>>>>> Stashed changes
         records = fetch_from_api(where_clause=where_clause, limit=CHUNK_SIZE, offset=offset)
         
         if not records:
@@ -145,6 +160,7 @@ if load_type == "initial":
         # Save this chunk
         filename = f"chi311_initial_{end_date.strftime('%Y%m%d')}_part{file_count:03d}.json"
         saved_path = save_to_volume(records, INITIAL_PATH, filename)
+<<<<<<< Updated upstream
         
         records_in_chunk = len(records)
         total_records += records_in_chunk
@@ -169,14 +185,36 @@ if load_type == "initial":
     print(f"   Total records: {total_records:,}")
     print(f"   Files created: {file_count}")
     print(f"   Location: {INITIAL_PATH}")
+=======
+        print(f"Saved {len(records)} records to: {saved_path}")
+        
+        total_records += len(records)
+        file_count += 1
+        offset += CHUNK_SIZE
+        
+        # Safety limit (20 files = 1M records max)
+        if file_count >= 20:
+            print("Reached safety limit (20 files)")
+            break
+    
+    print(f"\n{'='*50}")
+    print(f"Initial load complete!")
+    print(f"Total records: {total_records:,}")
+    print(f"Files created: {file_count}")
+>>>>>>> Stashed changes
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Incremental Load (Daily)
+<<<<<<< Updated upstream
 # MAGIC 
 # MAGIC Fetches records from the last N days (default: yesterday).
 # MAGIC Uses `last_modified_date` to catch both new and updated records.
+=======
+# MAGIC
+# MAGIC Fetches records from the last N days (default: yesterday)
+>>>>>>> Stashed changes
 
 # COMMAND ----------
 
@@ -274,6 +312,7 @@ except Exception as e:
 
 # MAGIC %md
 # MAGIC ## Summary
+<<<<<<< Updated upstream
 
 # COMMAND ----------
 
@@ -298,3 +337,13 @@ print("\n✅ Next Step: Run 02_bronze_autoloader.py to ingest files into Bronze 
 
 # Return success
 dbutils.notebook.exit("SUCCESS")
+=======
+# MAGIC
+# MAGIC | Metric | Value |
+# MAGIC |--------|-------|
+# MAGIC | Load Type | {load_type} |
+# MAGIC | Records Fetched | {len(records) if 'records' in dir() else 'N/A'} |
+# MAGIC | Saved To | {saved_path if 'saved_path' in dir() else 'N/A'} |
+# MAGIC
+# MAGIC **Next Step**: Run `02_bronze_autoloader.py` to ingest files into Bronze Delta table
+>>>>>>> Stashed changes

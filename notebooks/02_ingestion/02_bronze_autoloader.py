@@ -1,31 +1,31 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # 02 - Bronze Layer Autoloader
-# MAGIC 
+# MAGIC
 # MAGIC **Purpose**: Incrementally ingest JSON files from Volume into Bronze Delta table
-# MAGIC 
+# MAGIC
 # MAGIC **Pattern**: Volume (JSON) → Autoloader (Streaming) → Bronze (Delta)
-# MAGIC 
+# MAGIC
 # MAGIC **Key Features**:
 # MAGIC - **Incremental Processing**: Only processes new files (idempotent)
 # MAGIC - **Schema Evolution**: Handles new columns automatically
 # MAGIC - **Checkpointing**: Tracks processed files for exactly-once semantics
-# MAGIC 
+# MAGIC
 # MAGIC **Technology**: Spark Structured Streaming with cloudFiles (Autoloader)
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## What is Autoloader?
-# MAGIC 
+# MAGIC
 # MAGIC Autoloader is Databricks' recommended way to ingest files incrementally:
-# MAGIC 
+# MAGIC
 # MAGIC ```
 # MAGIC Day 1: Process 10 files ✓ (checkpoint updated)
 # MAGIC Day 2: Process 5 NEW files only (not all 15)
 # MAGIC Day 3: Process 3 NEW files only (not all 18)
 # MAGIC ```
-# MAGIC 
+# MAGIC
 # MAGIC **Benefits**:
 # MAGIC - Automatically discovers new files
 # MAGIC - Handles schema changes
@@ -86,7 +86,7 @@ print(f"Source Path: {SOURCE_PATH}")
 
 # MAGIC %md
 # MAGIC ## Define Schema
-# MAGIC 
+# MAGIC
 # MAGIC Explicit schema for Chicago 311 data (from exploration findings)
 
 # COMMAND ----------
@@ -124,12 +124,10 @@ chi311_schema = StructType([
 
 # COMMAND ----------
 
-# Autoloader options
+# Autoloader options (explicit schema, no evolution)
 autoloader_options = {
     "cloudFiles.format": "json",
     "cloudFiles.schemaLocation": f"{CHECKPOINT_PATH}/schema",
-    "cloudFiles.inferColumnTypes": "true",
-    "cloudFiles.schemaEvolutionMode": "addNewColumns",  # Handle new columns
     "recursiveFileLookup": "true"  # Look in subdirectories
 }
 
@@ -140,12 +138,12 @@ autoloader_options = {
 
 # COMMAND ----------
 
-# Create streaming DataFrame using Autoloader
+# Create streaming DataFrame using Autoloader with explicit schema
 df_stream = (
     spark.readStream
     .format("cloudFiles")
     .options(**autoloader_options)
-    .schema(chi311_schema)  # Use explicit schema
+    .schema(chi311_schema)
     .load(SOURCE_PATH)
 )
 
@@ -153,7 +151,7 @@ df_stream = (
 df_bronze = df_stream.withColumn(
     "_ingestion_timestamp", F.current_timestamp()
 ).withColumn(
-    "_source_file", F.input_file_name()
+    "_source_file", F.col("_metadata.file_path")  # Unity Catalog compatible
 )
 
 print("Streaming DataFrame created")
@@ -202,7 +200,7 @@ else:
 
 # MAGIC %md
 # MAGIC ## Alternative: Trigger Once with foreachBatch
-# MAGIC 
+# MAGIC
 # MAGIC For more control over the write process
 
 # COMMAND ----------
@@ -272,20 +270,20 @@ display(spark.sql(f"DESCRIBE HISTORY {BRONZE_TABLE}"))
 
 # MAGIC %md
 # MAGIC ## Summary
-# MAGIC 
+# MAGIC
 # MAGIC | Metric | Value |
 # MAGIC |--------|-------|
 # MAGIC | Source Path | {SOURCE_PATH} |
 # MAGIC | Target Table | {BRONZE_TABLE} |
 # MAGIC | Processing Mode | {processing_mode} |
 # MAGIC | Total Records | {record_count:,} |
-# MAGIC 
+# MAGIC
 # MAGIC **Autoloader Benefits Used**:
 # MAGIC - Incremental file discovery
 # MAGIC - Schema evolution support
 # MAGIC - Exactly-once processing via checkpoints
 # MAGIC - Recursive directory scanning
-# MAGIC 
+# MAGIC
 # MAGIC **Next Step**: 
 # MAGIC - Run Lakeflow DLT Pipeline for Silver + Gold transformations
 # MAGIC - Or run `03_data_quality/01_data_quality_checks.py` for validation
